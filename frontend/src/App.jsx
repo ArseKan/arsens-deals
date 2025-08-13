@@ -212,35 +212,56 @@ function Admin({products, setProducts}){
   );
 }
 
-function Checkout({cart, removeFromCart, totals, clearCart}){
-  useEffect(()=>{
-    // Attempt to render PayPal Buttons for cards if SDK is present
+function Checkout({cart, removeFromCart, totals, clearCart}) {
+  useEffect(() => {
+    // Render PayPal Card-only button if SDK is loaded
     if (window.paypal && window.paypal.Buttons) {
       try {
         const buttons = window.paypal.Buttons({
+          // Force card-only funding
           fundingSource: window.paypal.FUNDING.CARD,
-          createOrder: async () => {
-            // In a production integration, you would create the order on your server.
-            // For MVP, we use client-side order for capture (sandbox testing).
-            return fetch("/api/create-order", { method: "POST" })
-              .then(res => res.json())
-              .then(data => data.id)
-              .catch(()=>{ alert("Server create-order not set yet"); return false; });
+
+          // Create the order on the client (no backend call in sandbox)
+          createOrder: (data, actions) => {
+            return actions.order.create({
+              purchase_units: [{
+                description: "Arsen’s Deals order",
+                amount: {
+                  currency_code: "EUR",
+                  value: totals.total.toFixed(2)
+                }
+              }]
+            });
           },
+
+          // Capture payment on approval
           onApprove: async (data, actions) => {
-            // Capture on the client for sandbox testing (or call your server).
-            if (actions.order) {
+            try {
               const details = await actions.order.capture();
-              alert("Payment completed.");
-            } else {
-              alert("Order approved. Capture handled by server webhook.");
+              // Optional: you can inspect `details` or show an order id:
+              // alert(`Payment completed. Order: ${details.id}`);
+              alert("Payment completed (Sandbox).");
+              // TODO (later): call your backend to record the order
+            } catch (err) {
+              console.error(err);
+              alert("Capture error. Please try again.");
             }
           },
+
+          onError: (err) => {
+            console.error(err);
+            alert("Payment error. Please try again.");
+          }
         });
-        if (buttons.isEligible()) buttons.render("#paypal-card-button");
-      } catch {}
+
+        if (buttons.isEligible()) {
+          buttons.render("#paypal-card-button");
+        }
+      } catch (e) {
+        console.error("PayPal render error:", e);
+      }
     }
-  }, []);
+  }, [totals.total]); // re-render button if total changes
 
   return (
     <div style={{maxWidth:"1000px", margin:"0 auto", padding:"40px 16px"}}>
